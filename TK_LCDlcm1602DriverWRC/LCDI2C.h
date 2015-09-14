@@ -111,11 +111,8 @@ namespace TK_LCDlcm1602DriverWRC
 
 		//Windows IoT
 		Windows::Devices::I2c::I2cDevice^ _device;
-		LARGE_INTEGER _qpf;
+
 		Platform::Array<BYTE>^ _arr;
-		void delay(int ms);
-		void delayMicroseconds(int micro);
-		LARGE_INTEGER convertToMicrosecond(LARGE_INTEGER value);
-		LARGE_INTEGER LCDI2C::convertToQPC(LARGE_INTEGER valuemicroseconds);
+
 	};
 }

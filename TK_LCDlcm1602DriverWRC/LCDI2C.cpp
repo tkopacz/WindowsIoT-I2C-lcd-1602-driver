@@ -34,25 +34,6 @@ private:
 
 // Based on the work by LiquidCrystal I2C
 
-// When the display powers up, it is configured as follows:
-//
-// 1. Display clear
-// 2. Function set: 
-//    DL = 1; 8-bit interface data 
-//    N = 0; 1-line display 
-//    F = 0; 5x8 dot character font 
-// 3. Display on/off control: 
-//    D = 0; Display off 
-//    C = 0; Cursor off 
-//    B = 0; Blinking off 
-// 4. Entry mode set: 
-//    I/D = 1; Increment by 1
-//    S = 0; No shift 
-//
-// Note, however, that resetting the Arduino doesn't reset the LCD, so we
-// can't assume that its in that state when a sketch starts (and the
-// LiquidCrystal constructor is called).
-
 LCDI2C::LCDI2C(BYTE lcd_Addr, BYTE lcd_cols, BYTE lcd_rows)
 {
 	_Addr = lcd_Addr;
@@ -63,15 +44,13 @@ LCDI2C::LCDI2C(BYTE lcd_Addr, BYTE lcd_cols, BYTE lcd_rows)
 }
 
 
-//Windows::Foundation::IAsyncOperation<int>^  
-Windows::Foundation::IAsyncOperation<bool>^ LCDI2C::InitAsync() {
-	//TK: Init I2C
-	return create_async([this]() {
-		//TK: Measure speed
-		QueryPerformanceFrequency(&this->_qpf);
 
+Windows::Foundation::IAsyncOperation<bool>^ LCDI2C::InitAsync() {
+	//Init I2C
+	return create_async([this]() {
 		String^ aqs;
 		aqs = I2cDevice::GetDeviceSelector();
+		//Get devices based on device selector string
 		return concurrency::create_task(DeviceInformation::FindAllAsync(aqs))
 			.then([this](task<Windows::Devices::Enumeration::DeviceInformationCollection^> dev) {
 			auto dis = dev.get();
@@ -79,6 +58,7 @@ Windows::Foundation::IAsyncOperation<bool>^ LCDI2C::InitAsync() {
 				throw wexception(L"I2C bus not found");
 			}
 			String^ id = dis->GetAt(0)->Id;
+			//Get I2cDevice for LCD
 			return concurrency::create_task(I2cDevice::FromIdAsync(id, ref new I2cConnectionSettings(this->_Addr)))
 				.then([id, this](task<Windows::Devices::I2c::I2cDevice^> d) {
 				auto device = d.get();
@@ -117,11 +97,11 @@ void LCDI2C::begin(BYTE cols, BYTE lines, BYTE dotsize) {
 	// SEE PAGE 45/46 FOR INITIALIZATION SPECIFICATION!
 	// according to datasheet, we need at least 40ms after power rises above 2.7V
 	// before sending commands. Arduino can turn on way befer 4.5V so we'll wait 50
-	delay(50);
+	CPPHelper::ClockUtil::DelayMilisecond(50);
 
 	// Now we pull both RS and R/W low to begin commands
 	expanderWrite(_backlightval);	// reset expanderand turn backlight off (Bit 8 =1)
-	delay(1000);
+	CPPHelper::ClockUtil::DelayMilisecond(1000);
 
 	//put the LCD into 4 bit mode
 	// this is according to the hitachi HD44780 datasheet
@@ -129,15 +109,15 @@ void LCDI2C::begin(BYTE cols, BYTE lines, BYTE dotsize) {
 
 	// we start in 8bit mode, try to set 4 bit mode
 	write4bits(0x03 << 4);
-	delayMicroseconds(4500); // wait min 4.1ms
+	CPPHelper::ClockUtil::DelayMicrosecond(4500); // wait min 4.1ms
 
 							 // second try
 	write4bits(0x03 << 4);
-	delayMicroseconds(4500); // wait min 4.1ms
+	CPPHelper::ClockUtil::DelayMicrosecond(4500); // wait min 4.1ms
 
 							 // third go!
 	write4bits(0x03 << 4);
-	delayMicroseconds(150);
+	CPPHelper::ClockUtil::DelayMicrosecond(150);
 
 	// finally, set to 4-bit interface
 	write4bits(0x02 << 4);
@@ -166,12 +146,12 @@ void LCDI2C::begin(BYTE cols, BYTE lines, BYTE dotsize) {
 /********** high level commands, for the user! */
 void LCDI2C::clear() {
 	command(LCD_CLEARDISPLAY);// clear display, set cursor position to zero
-	delayMicroseconds(2000);  // this command takes a long time!
+	CPPHelper::ClockUtil::DelayMicrosecond(2000);  // this command takes a long time!
 }
 
 void LCDI2C::home() {
 	command(LCD_RETURNHOME);  // set cursor position to zero
-	delayMicroseconds(2000);  // this command takes a long time!
+	CPPHelper::ClockUtil::DelayMicrosecond(2000);  // this command takes a long time!
 }
 
 void LCDI2C::setCursor(BYTE col, BYTE row) {
@@ -295,28 +275,18 @@ void LCDI2C::write4bits(BYTE value) {
 	pulseEnable(value);
 }
 
-//#define printIIC(args)	Wire.send(args)
-
 void LCDI2C::expanderWrite(BYTE _data) {
 	_data = _data | _backlightval;
 	_arr->set(0, _data);
-	I2cTransferResult result= _device->WritePartial(_arr); //1:1 with Arduino "style" - can be optimized!
-	if (result.Status != Windows::Devices::I2c::I2cTransferStatus::FullTransfer) {
-		//Error, repeat
-		result = _device->WritePartial(_arr);
-	}
-
-	//Wire.beginTransmission(_Addr);
-	//printIIC((int)(_data) | _backlightval);
-	//Wire.endTransmission();
+	_device->Write(_arr); //1:1 with Arduino "style" - can be optimized!
 }
 
 void LCDI2C::pulseEnable(BYTE _data) {
 	expanderWrite(_data | En);	// En high
-	delayMicroseconds(1);		// enable pulse must be >450ns
+	CPPHelper::ClockUtil::DelayMicrosecond(1);		// enable pulse must be >450ns
 
 	expanderWrite(_data & ~En);	// En low
-	delayMicroseconds(50);		// commands need > 37us to settle
+	CPPHelper::ClockUtil::DelayMicrosecond(50);		// commands need > 37us to settle
 }
 
 void LCDI2C::printstr(Platform::String^ str) {
@@ -328,37 +298,4 @@ void LCDI2C::printstr(Platform::String^ str) {
 	}
 }
 
-//See:
-//https://msdn.microsoft.com/en-us/library/windows/desktop/dn553408(v=vs.85).aspx
-LARGE_INTEGER LCDI2C::convertToMicrosecond(LARGE_INTEGER valueqpc) {
-	valueqpc.QuadPart *= 1000000;
-	valueqpc.QuadPart /= this->_qpf.QuadPart;
-	return valueqpc;
-}
 
-LARGE_INTEGER LCDI2C::convertToQPC(LARGE_INTEGER valuemicroseconds) {
-	valuemicroseconds.QuadPart = valuemicroseconds.QuadPart * this->_qpf.QuadPart;
-	valuemicroseconds.QuadPart /= 1000000;
-	return valuemicroseconds;
-}
-
-void LCDI2C::delay(int ms) {
-	//Sleep(2);
-	//return;
-	Sleep(ms);
-}
-
-void LCDI2C::delayMicroseconds(int micro) {
-	//Sleep(2);
-	//return;
-	//micro = micro / 1000;
-	//if (micro == 0) micro = 1;
-	//Sleep(micro);
-	LARGE_INTEGER start, stop, tmp;
-	QueryPerformanceCounter(&start);
-	tmp.QuadPart = micro;
-	stop.QuadPart = start.QuadPart + convertToQPC(tmp).QuadPart;
-	do {
-		QueryPerformanceCounter(&tmp);
-	} while (tmp.QuadPart < stop.QuadPart);
-}
